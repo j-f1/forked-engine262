@@ -12,6 +12,8 @@ import {
   GetAsyncCycleRoot,
   AsyncBlockStart,
   PromiseCapabilityRecord,
+  PerformPromiseThen,
+  CreateBuiltinFunction,
 } from './abstract-ops/all.mjs';
 import {
   Completion,
@@ -294,8 +296,13 @@ export class SourceTextModuleRecord extends CyclicModuleRecord {
     // Assert: All named exports from module are resolvable.
     const realm = module.Realm;
     Assert(realm !== Value.undefined);
-    const env = NewModuleEnvironment(realm.GlobalEnv);
-    module.Environment = env;
+    let env;
+    if (module instanceof REPLModuleRecord) {
+      env = module.Environment;
+    } else {
+      env = NewModuleEnvironment(realm.GlobalEnv);
+      module.Environment = env;
+    }
     const envRec = env.EnvironmentRecord;
     for (const ie of module.ImportEntries) {
       const importedModule = X(HostResolveImportedModule(module, ie.ModuleRequest));
@@ -375,6 +382,35 @@ export class SourceTextModuleRecord extends CyclicModuleRecord {
     } else {
       Assert(capability instanceof PromiseCapabilityRecord);
       X(AsyncBlockStart(capability, module.ECMAScriptCode.body, moduleContext));
+      return Value.undefined;
+    }
+  }
+}
+
+export class REPLModuleRecord extends SourceTextModuleRecord {
+  ExecuteModule(capability) {
+    const module = this;
+    const moduleCtx = module.Context;
+    if (module.Async === Value.false) {
+      Assert(capability === undefined);
+      surroundingAgent.executionContextStack.push(moduleCtx);
+      const result = Evaluate_Module(module.ECMAScriptCode.body);
+      surroundingAgent.executionContextStack.pop(moduleCtx);
+      // Resume the context that is now on the top of the execution context stack as the running execution context.
+      if (!(result instanceof AbruptCompletion)) {
+        this.REPLEvaluationResult = result;
+      }
+      return Completion(result);
+    } else {
+      Assert(capability instanceof PromiseCapabilityRecord);
+      X(AsyncBlockStart(capability, module.ECMAScriptCode.body, moduleCtx, true));
+      PerformPromiseThen(
+        capability.Promise,
+        CreateBuiltinFunction(([result]) => {
+          this.REPLEvaluationResult = result;
+        }, []),
+        Value.undefined,
+      );
       return Value.undefined;
     }
   }

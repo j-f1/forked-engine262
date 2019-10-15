@@ -17,7 +17,8 @@ import {
   Type,
   Value,
 } from './value.mjs';
-import { ParseScript, ParseModule } from './parse.mjs';
+import { ParseScript, ParseModule, ParseREPLInput } from './parse.mjs';
+import { NewREPLEnvironment } from './environment.mjs';
 import {
   AbruptCompletion,
   Completion,
@@ -179,6 +180,44 @@ class APIRealm {
     }
     module.HostDefined.public.module = module;
     return module.HostDefined.public;
+  }
+
+  createREPL() {
+    const env = this.scope(() => NewREPLEnvironment(surroundingAgent.currentRealmRecord.GlobalEnv));
+    const evaluateREPLInput = (sourceText) => {
+      if (typeof sourceText !== 'string') {
+        throw new TypeError('sourceText must be a string');
+      }
+      return this.scope(() => {
+        const specifier = `${process.cwd()}/repl`;
+        const module = ParseREPLInput(sourceText, surroundingAgent.currentRealmRecord, env, { specifier, public: { specifier } });
+        if (Array.isArray(module)) {
+          return new ThrowCompletion(module[0]);
+        }
+        module.HostDefined.public.module = module;
+        let result = module.Link();
+        if (!(result instanceof AbruptCompletion)) {
+          result = module.Evaluate();
+        }
+
+        if (!(result instanceof AbruptCompletion)) {
+          runJobQueue();
+        }
+
+        if (!(result instanceof AbruptCompletion)) {
+          if (result.PromiseState === 'rejected') {
+            result = Throw(this, result.PromiseResult);
+          }
+        }
+
+        if (result instanceof AbruptCompletion) {
+          return result;
+        }
+        return EnsureCompletion(module.REPLEvaluationResult);
+      });
+    };
+
+    return { evaluateREPLInput };
   }
 
   scope(cb) {

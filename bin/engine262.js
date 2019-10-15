@@ -237,10 +237,11 @@ if (entry) {
   process.stdout.write(`${packageJson.name} v${packageJson.version}
 Please report bugs to ${packageJson.bugs.url}
 `);
+  const ctx = realm.createREPL();
   repl.start({
     prompt: '> ',
     eval: (cmd, context, filename, callback) => {
-      const result = realm.evaluateScript(cmd, { specifier: process.cwd() });
+      const result = ctx.evaluateREPLInput(cmd);
       callback(null, result);
     },
     preview: false,

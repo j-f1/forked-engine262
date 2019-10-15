@@ -1,6 +1,6 @@
 import * as acorn from 'acorn';
 import { surroundingAgent } from './engine.mjs';
-import { ExportEntryRecord, SourceTextModuleRecord } from './modules.mjs';
+import { ExportEntryRecord, SourceTextModuleRecord, REPLModuleRecord } from './modules.mjs';
 import { Value } from './value.mjs';
 import {
   ModuleRequests_ModuleItemList,
@@ -40,6 +40,11 @@ const skipWhiteSpace = /(?:\s|\/\/.*|\/\*[^]*?\*\/)*/g;
 
 const Parser = acorn.Parser.extend((P) => (class Parse262 extends P {
   constructor(options = {}, source) {
+    const repl = options.sourceType === 'repl';
+    if (repl) {
+      options.sourceType = 'module';
+      options.allowAwaitOutsideFunction = true;
+    }
     super({
       ...options,
       ecmaVersion: 2020,
@@ -49,6 +54,10 @@ const Parser = acorn.Parser.extend((P) => (class Parse262 extends P {
     }, source);
     if (options.strict === true) {
       this.strict = true;
+    }
+    this.replOverride = repl;
+    if (repl) {
+      this.strict = this.strictDirective(this.pos);
     }
     this.containsTopLevelAwait = false;
   }
@@ -93,6 +102,17 @@ const Parser = acorn.Parser.extend((P) => (class Parse262 extends P {
       return this.finishToken(acorn.tokTypes.question);
     }
     return super.getTokenFromCode(code);
+  }
+
+  parseTopLevel(node) {
+    if (this.replOverride) {
+      if (this.type.label === '{') {
+        const stmt = this.startNode();
+        node.body = [this.parseExpressionStatement(stmt, this.parseObj(false))];
+        return this.finishNode(node, 'Program');
+      }
+    }
+    return super.parseTopLevel(node);
   }
 
   parseStatement(context, topLevel, exports) {
@@ -428,6 +448,72 @@ export function ParseModule(sourceText, realm, hostDefined = {}) {
   return new SourceTextModuleRecord({
     Realm: realm,
     Environment: Value.undefined,
+    Namespace: Value.undefined,
+    ImportMeta: Value.undefined,
+    Async: body.containsTopLevelAwait ? Value.true : Value.false,
+    AsyncEvaluating: Value.false,
+    TopLevelCapability: Value.undefined,
+    AsyncParentModules: Value.undefined,
+    PendingAsyncDependencies: Value.undefined,
+    Status: 'unlinked',
+    EvaluationError: Value.undefined,
+    HostDefined: hostDefined,
+    ECMAScriptCode: body,
+    Context: Value.undefined,
+    RequestedModules: requestedModules,
+    ImportEntries: importEntries,
+    LocalExportEntries: localExportEntries,
+    IndirectExportEntries: indirectExportEntries,
+    StarExportEntries: starExportEntries,
+    DFSIndex: Value.undefined,
+    DFSAncestorIndex: Value.undefined,
+  });
+}
+
+export function ParseREPLInput(sourceText, realm, REPLEnvironment, hostDefined = {}) {
+  // Assert: sourceText is an ECMAScript source text (see clause 10).
+  const body = forwardError(() => Parser.parse(sourceText, {
+    sourceType: 'repl',
+  }));
+  if (Array.isArray(body)) {
+    return body;
+  }
+
+  const requestedModules = ModuleRequests_ModuleItemList(body.body);
+  const importEntries = ImportEntries_ModuleItemList(body.body);
+  const importedBoundNames = ImportedLocalNames(importEntries);
+  const indirectExportEntries = [];
+  const localExportEntries = [];
+  const starExportEntries = [];
+  const exportEntries = ExportEntries_ModuleItemList(body.body);
+  for (const ee of exportEntries) {
+    if (ee.ModuleRequest === Value.null) {
+      if (!importedBoundNames.includes(ee.LocalName)) {
+        localExportEntries.push(ee);
+      } else {
+        const ie = importEntries.find((e) => e.LocalName === ee.LocalName);
+        if (ie.ImportName === new Value('*')) {
+          // Assert: This is a re-export of an imported module namespace object.
+          localExportEntries.push(ee);
+        } else {
+          indirectExportEntries.push(new ExportEntryRecord({
+            ModuleRequest: ie.ModuleRequest,
+            ImportName: ie.ImportName,
+            LocalName: Value.null,
+            ExportName: ee.ExportName,
+          }));
+        }
+      }
+    } else if (ee.ImportName === new Value('*')) {
+      starExportEntries.push(ee);
+    } else {
+      indirectExportEntries.push(ee);
+    }
+  }
+
+  return new REPLModuleRecord({
+    Realm: realm,
+    Environment: REPLEnvironment,
     Namespace: Value.undefined,
     ImportMeta: Value.undefined,
     Async: body.containsTopLevelAwait ? Value.true : Value.false,

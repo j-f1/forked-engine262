@@ -13,7 +13,7 @@ import { Assert, Call } from './all.mjs';
 // 25.7 #sec-async-function-objects
 
 // https://tc39.es/proposal-top-level-await/#sec-asyncblockstart
-export function AsyncBlockStart(promiseCapability, asyncBody, asyncContext) {
+export function AsyncBlockStart(promiseCapability, asyncBody, asyncContext, useNormalResult) {
   asyncContext.promiseCapability = promiseCapability;
 
   const runningContext = surroundingAgent.runningExecutionContext;
@@ -23,7 +23,7 @@ export function AsyncBlockStart(promiseCapability, asyncBody, asyncContext) {
     // Assert: If we return here, the async function either threw an exception or performed an implicit or explicit return; all awaiting is done.
     surroundingAgent.executionContextStack.pop(asyncContext);
     if (result.Type === 'normal') {
-      X(Call(promiseCapability.Resolve, Value.undefined, [Value.undefined]));
+      X(Call(promiseCapability.Resolve, Value.undefined, [useNormalResult ? result.Value : Value.undefined]));
     } else if (result.Type === 'return') {
       X(Call(promiseCapability.Resolve, Value.undefined, [result.Value]));
     } else {

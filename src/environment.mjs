@@ -58,7 +58,9 @@ export class DeclarativeEnvironmentRecord extends EnvironmentRecord {
     // 1. Let envRec be the declarative Environment Record for which the method was invoked.
     const envRec = this;
     // 2. Assert: envRec does not already have a binding for N.
-    Assert(!envRec.bindings.has(N));
+    if (!(this instanceof REPLEnvironmentRecord)) {
+      Assert(!envRec.bindings.has(N));
+    }
     // 3. Create a mutable binding in envRec for N and record that it is uninitialized. If D
     //    is true, record that the newly created binding may be delted by a subsequent
     //    DeleteBinding call.
@@ -79,7 +81,9 @@ export class DeclarativeEnvironmentRecord extends EnvironmentRecord {
     // 1. Let envRec be the declarative Environment Record for which the method was invoked.
     const envRec = this;
     // 2. Assert: envRec does not already have a binding for N.
-    Assert(!envRec.bindings.has(N));
+    if (!(this instanceof REPLEnvironmentRecord)) {
+      Assert(!envRec.bindings.has(N));
+    }
     // 3. Create an immutable binding in envRec for N and record that it is uninitialized. If
     //    S is true, record that the newly created binding is a strict binding.
     this.bindings.set(N, {
@@ -764,7 +768,9 @@ export class ModuleEnvironmentRecord extends DeclarativeEnvironmentRecord {
   // #sec-module-environment-records-getbindingvalue-n-s
   GetBindingValue(N, S) {
     // 1. Assert: S is true.
-    Assert(S === Value.true);
+    if (!(this instanceof REPLEnvironmentRecord)) {
+      Assert(S === Value.true);
+    }
     // 2. Let envRec be the module Environment Record for which the method was invoked.
     const envRec = this;
     // 3. Assert: envRec has a binding for N.
@@ -827,6 +833,25 @@ export class ModuleEnvironmentRecord extends DeclarativeEnvironmentRecord {
     });
     // 6. Return NormalCompletion(empty).
     return NormalCompletion(undefined);
+  }
+}
+
+export class REPLEnvironmentRecord extends ModuleEnvironmentRecord {
+  HasLexicalDeclaration() {
+    return Value.false;
+  }
+
+  CreateImportBinding(N, M, N2) {
+    const envRec = this;
+    // Assert(envRec.HasBinding(N) === Value.false);
+    Assert(M instanceof AbstractModuleRecord);
+    // Assert: When M.[[Environment]] is instantiated it will have a direct binding for N2.
+    envRec.bindings.set(N, {
+      indirect: true,
+      target: [M, N2],
+      initialized: true,
+    });
+    return new NormalCompletion(undefined);
   }
 }
 
@@ -961,5 +986,13 @@ export function NewModuleEnvironment(E) {
   // 4. Set the outer lexical environment reference of env to E.
   env.outerEnvironmentReference = E;
   // 5. Return env.
+  return env;
+}
+
+export function NewREPLEnvironment(E) {
+  const env = new LexicalEnvironment();
+  const envRec = new REPLEnvironmentRecord();
+  env.EnvironmentRecord = envRec;
+  env.outerEnvironmentReference = E;
   return env;
 }
