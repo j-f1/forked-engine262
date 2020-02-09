@@ -51,6 +51,8 @@ const Parser = acorn.Parser.extend((P) => (class Parse262 extends P {
       this.strict = true;
     }
     this.containsTopLevelAwait = false;
+    this.forbiddenIdTokens = /as|from|default|of|in/;
+    this.forbiddenIdStartTokens = /await|let|yield|get|set|static/;
   }
 
   parse() {
@@ -298,6 +300,37 @@ const Parser = acorn.Parser.extend((P) => (class Parse262 extends P {
     deepFreeze(body);
 
     return body;
+  }
+
+  readWord() {
+    const word = this.readWord1();
+    debugger;
+    if (this.keywords.test(word)) {
+      if (this.containsEsc) {
+        this.raiseRecoverable(this.start, `Escape sequence in keyword ${word}`);
+      }
+      return this.finishToken(acorn.keywordTypes[word], word);
+    } else if (this.forbiddenIdTokens.test(word) || this.forbiddenIdStartTokens.test(word)) {
+      return this.finishToken(acorn.tokTypes.name, word);
+    } else {
+      const words = [word];
+      while (true) {
+        const oldPos = this.pos;
+        const oldEsc = this.containsEsc;
+        while (this.input.charCodeAt(this.pos) === 32) ++this.pos;
+        const nextWord = this.readWord1();
+        if (!nextWord) break;
+        if (this.keywords.test(nextWord) || this.forbiddenIdTokens.test(nextWord)) {
+          // bail
+          this.pos = oldPos;
+          this.containsEsc = oldEsc;
+          break;
+        } else {
+          words.push(nextWord);
+        }
+      }
+      return this.finishToken(acorn.tokTypes.name, words.join(' '));
+    }
   }
 }));
 

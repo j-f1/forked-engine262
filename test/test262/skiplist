@@ -1,3 +1,9 @@
+// multi word variables
+built-ins/Function/S15.3.2.1_A1_T13.js
+language/line-terminators/invalid-comment-single-lf.js
+built-ins/Promise/prototype/finally/rejected-observable-then-calls-argument.js
+language/expressions/import.meta/syntax/escape-sequence-meta.js
+
 // these tests pass but take a long time
 built-ins/parseFloat/S15.1.2.3_A6.js
 built-ins/parseInt/S15.1.2.2_A8.js
